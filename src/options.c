@@ -398,10 +398,8 @@ static const struct option longopts[] = {
     {"opengl", no_argument, NULL, 289},
     {"backend", required_argument, NULL, 290},
     {"glx-no-stencil", no_argument, NULL, 291},
-    {"glx-copy-from-front", no_argument, NULL, 292},
     {"benchmark", required_argument, NULL, 293},
     {"benchmark-wid", required_argument, NULL, 294},
-    {"glx-use-copysubbuffermesa", no_argument, NULL, 295},
     {"blur-background-exclude", required_argument, NULL, 296},
     {"active-opacity", required_argument, NULL, 297},
     {"glx-no-rebind-pixmap", no_argument, NULL, 298},
@@ -469,21 +467,23 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 'b') {
 			*fork = true;
 		} else if (o == 'd') {
-			log_warn("-d will be ignored, please use the DISPLAY "
-			         "environment variable");
+			log_error("-d is removed, please use the DISPLAY "
+			          "environment variable");
+			goto err;
 		} else if (o == 314) {
 			*all_xerrors = true;
 		} else if (o == 318) {
 			printf("%s\n", COMPTON_VERSION);
 			return true;
 		} else if (o == 'S') {
-			log_warn("-S will be ignored");
+			log_error("-S is no longer available");
+			goto err;
 		} else if (o == 320) {
-			log_warn("--no-name-pixmap will be ignored");
+			log_error("--no-name-pixmap is no longer available");
+			goto err;
 		} else if (o == '?' || o == ':') {
 			usage(argv[0], 1);
-			*exit_code = 1;
-			return true;
+			goto err;
 		}
 	}
 
@@ -491,11 +491,13 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 	if (optind < argc) {
 		// log is not initialized here yet
 		fprintf(stderr, "picom doesn't accept positional arguments.\n");
-		*exit_code = 1;
-		return true;
+		goto err;
 	}
 
 	return false;
+err:
+	*exit_code = 1;
+	return true;
 }
 
 /**
@@ -514,9 +516,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	// Parse commandline arguments. Range checking will be done later.
 
-	const char *deprecation_message = "has been removed. If you encounter problems "
-	                                  "without this feature, please feel free to "
-	                                  "open a bug report.";
+	const char *deprecation_message attr_unused =
+	    "has been removed. If you encounter problems "
+	    "without this feature, please feel free to "
+	    "open a bug report.";
 	optind = 1;
 	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
 		switch (o) {
@@ -642,14 +645,14 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 271:
 			// --alpha-step
-			log_warn("--alpha-step has been removed, we now tries to "
+			log_error("--alpha-step has been removed, we now tries to "
 			         "make use of all alpha values");
-			break;
-		case 272: log_warn("use of --dbe is deprecated"); break;
+			return false;
+		case 272: log_error("use of --dbe is deprecated"); return false;
 		case 273:
-			log_warn("--paint-on-overlay has been removed, and is enabled "
-			         "when possible");
-			break;
+			log_error("--paint-on-overlay has been removed, the feature is enabled "
+			         "whenever possible");
+			return false;
 		P_CASEBOOL(274, sw_opti);
 		case 275:
 			// --vsync-aggressive
@@ -701,18 +704,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 				exit(1);
 			break;
 		P_CASEBOOL(291, glx_no_stencil);
-		case 292:
-			log_error("--glx-copy-from-front %s", deprecation_message);
-			exit(1);
-			break;
 		P_CASEINT(293, benchmark);
 		case 294:
 			// --benchmark-wid
 			opt->benchmark_wid = (xcb_window_t)strtol(optarg, NULL, 0);
-			break;
-		case 295:
-			log_error("--glx-use-copysubbuffermesa %s", deprecation_message);
-			exit(1);
 			break;
 		case 296:
 			// --blur-background-exclude
@@ -792,9 +787,8 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(311, vsync_use_glfinish);
 		case 312:
 			// --xrender-sync
-			log_warn("Please use --xrender-sync-fence instead of --xrender-sync");
-			opt->xrender_sync_fence = true;
-			break;
+			log_error("Please use --xrender-sync-fence instead of --xrender-sync");
+			return false;
 		P_CASEBOOL(313, xrender_sync_fence);
 		P_CASEBOOL(315, no_fading_destroyed_argb);
 		P_CASEBOOL(316, force_win_blend);

@@ -55,7 +55,7 @@ region_t get_damage(session_t *ps, bool all_damage) {
 
 /// paint all windows
 void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
-	if (ps->o.xrender_sync_fence || (ps->drivers & DRIVER_NVIDIA)) {
+	if (ps->o.xrender_sync_fence) {
 		if (ps->xsync_exists && !x_fence_sync(ps->c, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
 			          "disabled from now on.");
@@ -153,6 +153,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	if (ps->root_image) {
 		ps->backend_data->ops->compose(ps->backend_data, ps->root_image, 0, 0,
 		                               &reg_paint, &reg_visible);
+	} else {
+		ps->backend_data->ops->fill(ps->backend_data, (struct color){0, 0, 0, 1},
+		                            &reg_paint);
 	}
 
 	// Windows are sorted from bottom to top
@@ -201,17 +204,36 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			// itself is not opaque, only the frame is.
 
 			double blur_opacity = 1;
-			if (w->state == WSTATE_MAPPING) {
+			if (w->opacity < (1.0 / MAX_ALPHA)) {
+				// Hide blur for fully transparent windows.
+				blur_opacity = 0;
+			} else if (w->state == WSTATE_MAPPING) {
 				// Gradually increase the blur intensity during
 				// fading in.
+				assert(w->opacity <= w->opacity_target);
 				blur_opacity = w->opacity / w->opacity_target;
 			} else if (w->state == WSTATE_UNMAPPING ||
 			           w->state == WSTATE_DESTROYING) {
 				// Gradually decrease the blur intensity during
 				// fading out.
-				blur_opacity =
-				    w->opacity / win_calc_opacity_target(ps, w, true);
+				assert(w->opacity <= w->opacity_target_old);
+				blur_opacity = w->opacity / w->opacity_target_old;
+			} else if (w->state == WSTATE_FADING) {
+				if (w->opacity < w->opacity_target &&
+				    w->opacity_target_old < (1.0 / MAX_ALPHA)) {
+					// Gradually increase the blur intensity during
+					// fading in.
+					assert(w->opacity <= w->opacity_target);
+					blur_opacity = w->opacity / w->opacity_target;
+				} else if (w->opacity > w->opacity_target &&
+				           w->opacity_target < (1.0 / MAX_ALPHA)) {
+					// Gradually decrease the blur intensity during
+					// fading out.
+					assert(w->opacity <= w->opacity_target_old);
+					blur_opacity = w->opacity / w->opacity_target_old;
+				}
 			}
+			assert(blur_opacity >= 0 && blur_opacity <= 1);
 
 			if (real_win_mode == WMODE_TRANS || ps->o.force_win_blend) {
 				// We need to blur the bounding shape of the window

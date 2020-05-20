@@ -1028,17 +1028,6 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 		}
 	}
 
-	// Enable specific tracking options, if needed by the condition
-	// TODO: Add track_leader
-	switch (pleaf->predef) {
-	// case C2_L_PROUNDED: ps->o.detect_rounded_corners = true; break;
-	case C2_L_PNAME:
-	case C2_L_PCLASSG:
-	case C2_L_PCLASSI:
-	case C2_L_PROLE: ps->o.track_wdata = true; break;
-	default: break;
-	}
-
 	// Warn about lower case characters in target name
 	if (pleaf->predef == C2_L_PUNDEFINED) {
 		for (const char *pc = pleaf->tgt; *pc; ++pc) {
@@ -1328,7 +1317,7 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			case C2_L_PFULLSCREEN: tgt = win_is_fullscreen(ps, w); break;
 			case C2_L_POVREDIR: tgt = w->a.override_redirect; break;
 			case C2_L_PARGB: tgt = win_has_alpha(w); break;
-			case C2_L_PFOCUSED: tgt = win_is_focused_real(ps, w); break;
+			case C2_L_PFOCUSED: tgt = win_is_focused_raw(ps, w); break;
 			case C2_L_PWMWIN: tgt = w->wmwin; break;
 			case C2_L_PBSHAPED: tgt = w->bounding_shaped; break;
 			case C2_L_PROUNDED: tgt = w->rounded_corners; break;

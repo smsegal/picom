@@ -50,9 +50,9 @@ struct gl_blur_context {
 static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 	auto ret = glGetUniformLocation(p, name);
 	if (ret < 0) {
-		log_error("Failed to get location of uniform '%s'. the compositor might "
-		          "not work correctly.",
-		          name);
+		log_info("Failed to get location of uniform '%s'. This is normal when "
+		         "using custom shaders.",
+		         name);
 	}
 	return ret;
 }
@@ -262,8 +262,7 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
  * deleted when the gl_image is released.
  */
 static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
-
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 
 	// Prepare textures which will be used for destination and source of rendering
 	// during downscaling.
@@ -358,8 +357,7 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
  */
 static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
                         GLint *coord, GLuint *indices, int nrects) {
-
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 	if (!img || !img->inner->texture) {
 		log_error("Missing texture.");
 		return;
@@ -419,6 +417,7 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+
 	glDisableVertexAttribArray(vert_coord_loc);
 	glDisableVertexAttribArray(vert_in_texcoord_loc);
 	glBindVertexArray(0);
@@ -505,7 +504,7 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 // TODO: make use of reg_visible
 void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
                 const region_t *reg_tgt, const region_t *reg_visible attr_unused) {
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 	struct gl_image *img = image_data;
 
 	// Painting
@@ -540,7 +539,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blur,
              const region_t *reg_visible attr_unused) {
 	struct gl_blur_context *bctx = ctx;
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 
 	if (gd->width + bctx->resize_width * 2 != bctx->texture_width ||
 	    gd->height + bctx->resize_height * 2 != bctx->texture_height) {
@@ -555,33 +554,6 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 		glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[1]);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bctx->texture_width,
 		             bctx->texture_height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-
-		// XXX: do we need projection matrix for blur at all?
-		// Note: OpenGL matrices are column major
-		GLfloat projection_matrix[4][4] = {
-		    {2.0f / (GLfloat)bctx->texture_width, 0, 0, 0},
-		    {0, 2.0f / (GLfloat)bctx->texture_height, 0, 0},
-		    {0, 0, 0, 0},
-		    {-1, -1, 0, 1}};
-
-		// Update projection matrices in the blur shaders
-		for (int i = 0; i < bctx->npasses - 1; i++) {
-			assert(bctx->blur_shader[i].prog);
-			glUseProgram(bctx->blur_shader[i].prog);
-			int pml = glGetUniformLocationChecked(bctx->blur_shader[i].prog,
-			                                      "projection");
-			glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-		}
-
-		GLfloat projection_matrix2[4][4] = {{2.0f / (GLfloat)gd->width, 0, 0, 0},
-		                                    {0, 2.0f / (GLfloat)gd->height, 0, 0},
-		                                    {0, 0, 0, 0},
-		                                    {-1, -1, 0, 1}};
-		assert(bctx->blur_shader[bctx->npasses - 1].prog);
-		glUseProgram(bctx->blur_shader[bctx->npasses - 1].prog);
-		int pml = glGetUniformLocationChecked(
-		    bctx->blur_shader[bctx->npasses - 1].prog, "projection");
-		glUniformMatrix4fv(pml, 1, false, projection_matrix2[0]);
 	}
 
 	// Remainder: regions are in Xorg coordinates
@@ -688,7 +660,6 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 			// translate the render origin so we don't need a big texture
 			glUniform2f(p->orig_loc, -(GLfloat)extent_resized->x1,
 			            -(GLfloat)dst_y_resized_fb_coord);
-			glViewport(0, 0, bctx->texture_width, bctx->texture_height);
 		} else {
 			// last pass, draw directly into the back buffer, with origin
 			// regions
@@ -696,7 +667,6 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
 			glUniform1f(p->unifm_opacity, (float)opacity);
 			glUniform2f(p->orig_loc, 0, 0);
-			glViewport(0, 0, gd->width, gd->height);
 		}
 
 		glUniform2f(p->texorig_loc, (GLfloat)texorig_x, (GLfloat)texorig_y);
@@ -778,33 +748,14 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
  * Callback to run on root window size change.
  */
 void gl_resize(struct gl_data *gd, int width, int height) {
-	glViewport(0, 0, width, height);
+	GLint viewport_dimensions[2];
+	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
+
 	gd->height = height;
 	gd->width = width;
 
-	// XXX: do we need projection matrix at all?
-	// Note: OpenGL matrices are column major
-	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)width, 0, 0, 0},
-	                                   {0, 2.0f / (GLfloat)height, 0, 0},
-	                                   {0, 0, 0, 0},
-	                                   {-1, -1, 0, 1}};
-
-	// Update projection matrix in the win shader
-	glUseProgram(gd->win_shader.prog);
-	int pml = glGetUniformLocationChecked(gd->win_shader.prog, "projection");
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-
-	glUseProgram(gd->fill_shader.prog);
-	pml = glGetUniformLocationChecked(gd->fill_shader.prog, "projection");
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-
-	glUseProgram(gd->present_prog);
-	pml = glGetUniformLocationChecked(gd->present_prog, "projection");
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-
-	glUseProgram(gd->brightness_shader.prog);
-	pml = glGetUniformLocationChecked(gd->brightness_shader.prog, "projection");
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	assert(viewport_dimensions[0] >= gd->width);
+	assert(viewport_dimensions[1] >= gd->height);
 
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_BGR,
@@ -865,7 +816,7 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	static const GLuint fill_vert_in_coord_loc = 0;
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
@@ -904,6 +855,7 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	                      sizeof(*coord) * 2, (void *)0);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -917,13 +869,13 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 }
 
 void gl_fill(backend_t *base, struct color c, const region_t *clip) {
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 	return _gl_fill(base, c, clip, gd->back_fbo, gd->height, true);
 }
 
 void gl_release_image(backend_t *base, void *image_data) {
 	struct gl_image *wd = image_data;
-	struct gl_data *gl = (void *)base;
+	auto gd = (struct gl_data *)base;
 	wd->inner->refcount--;
 	assert(wd->inner->refcount >= 0);
 	if (wd->inner->refcount > 0) {
@@ -931,7 +883,7 @@ void gl_release_image(backend_t *base, void *image_data) {
 		return;
 	}
 
-	gl->release_user_data(base, wd->inner);
+	gd->release_user_data(base, wd->inner);
 	assert(wd->inner->user_data == NULL);
 
 	glDeleteTextures(1, &wd->inner->texture);
@@ -1003,6 +955,16 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		ctx->method = BLUR_METHOD_NONE;
 		return ctx;
 	}
+
+	// Set projection matrix to gl viewport dimensions so we can use screen
+	// coordinates for all vertices
+	// Note: OpenGL matrices are column major
+	GLint viewport_dimensions[2];
+	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
+	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)viewport_dimensions[0], 0, 0, 0},
+	                                   {0, 2.0f / (GLfloat)viewport_dimensions[1], 0, 0},
+	                                   {0, 0, 0, 0},
+	                                   {-1, -1, 0, 1}};
 
 	ctx->blur_shader = ccalloc(max2(2, nkernels), gl_blur_shader_t);
 
@@ -1083,6 +1045,13 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
+
+		// Setup projection matrix
+		glUseProgram(pass->prog);
+		int pml = glGetUniformLocationChecked(pass->prog, "projection");
+		glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+		glUseProgram(0);
+
 		ctx->resize_width += kern->w / 2;
 		ctx->resize_height += kern->h / 2;
 	}
@@ -1092,9 +1061,16 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		// the single pass case
 		auto pass = &ctx->blur_shader[1];
 		pass->prog = gl_create_program_from_str(vertex_shader, dummy_frag);
-		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
+		pass->unifm_opacity = -1;
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
+
+		// Setup projection matrix
+		glUseProgram(pass->prog);
+		int pml = glGetUniformLocationChecked(pass->prog, "projection");
+		glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+		glUseProgram(0);
+
 		ctx->npasses = 2;
 	} else {
 		ctx->npasses = nkernels;
@@ -1200,6 +1176,14 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glStencilMask(0x1);
 	glStencilFunc(GL_EQUAL, 0x1, 0x1);
 
+	// Set gl viewport to the maximum supported size so we won't have to worry about
+	// it later on when the screen is resized. The corresponding projection matrix can
+	// be set now and won't have to be updated. Since fragments outside the target
+	// buffer are skipped anyways, this should have no impact on performance.
+	GLint viewport_dimensions[2];
+	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
+	glViewport(0, 0, viewport_dimensions[0], viewport_dimensions[1]);
+
 	// Clear screen
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
@@ -1216,17 +1200,37 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
+	// Set projection matrix to gl viewport dimensions so we can use screen
+	// coordinates for all vertices
+	// Note: OpenGL matrices are column major
+	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)viewport_dimensions[0], 0, 0, 0},
+	                                   {0, 2.0f / (GLfloat)viewport_dimensions[1], 0, 0},
+	                                   {0, 0, 0, 0},
+	                                   {-1, -1, 0, 1}};
+
+	// Initialize shaders
 	gl_win_shader_from_string(vertex_shader, win_shader_glsl, &gd->win_shader);
+	int pml = glGetUniformLocationChecked(gd->win_shader.prog, "projection");
+	glUseProgram(gd->win_shader.prog);
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	glUseProgram(0);
+
 	gd->fill_shader.prog = gl_create_program_from_str(fill_vert, fill_frag);
 	gd->fill_shader.color_loc = glGetUniformLocation(gd->fill_shader.prog, "color");
+	pml = glGetUniformLocationChecked(gd->fill_shader.prog, "projection");
+	glUseProgram(gd->fill_shader.prog);
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	glUseProgram(0);
 
 	gd->present_prog = gl_create_program_from_str(present_vertex_shader, dummy_frag);
 	if (!gd->present_prog) {
 		log_error("Failed to create the present shader");
 		return false;
 	}
+	pml = glGetUniformLocationChecked(gd->present_prog, "projection");
 	glUseProgram(gd->present_prog);
 	glUniform1i(glGetUniformLocationChecked(gd->present_prog, "tex"), 0);
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 	glUseProgram(0);
 
 	gd->brightness_shader.prog =
@@ -1235,12 +1239,13 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 		log_error("Failed to create the brightness shader");
 		return false;
 	}
+	pml = glGetUniformLocationChecked(gd->brightness_shader.prog, "projection");
 	glUseProgram(gd->brightness_shader.prog);
 	glUniform1i(glGetUniformLocationChecked(gd->brightness_shader.prog, "tex"), 0);
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 	glUseProgram(0);
 
-	// Set up the size of the viewport. We do this last because it expects the blur
-	// textures are already set up.
+	// Set up the size of the back texture
 	gl_resize(gd, ps->root_width, ps->root_height);
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->back_fbo);
@@ -1301,22 +1306,18 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 		return;
 	}
 
-	struct gl_data *gl = (void *)base;
-	auto new_tex = cmalloc(struct gl_texture);
+	auto gd = (struct gl_data *)base;
+	auto new_tex = ccalloc(1, struct gl_texture);
 
-	glGenTextures(1, &new_tex->texture);
+	new_tex->texture = gl_new_texture(GL_TEXTURE_2D);
 	glBindTexture(GL_TEXTURE_2D, new_tex->texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img->inner->width, img->inner->height, 0,
 	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	new_tex->y_inverted = true;
 	new_tex->height = img->inner->height;
 	new_tex->width = img->inner->width;
 	new_tex->refcount = 1;
-	new_tex->user_data = gl->decouple_texture_user_data(base, img->inner->user_data);
+	new_tex->user_data = gd->decouple_texture_user_data(base, img->inner->user_data);
 
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
@@ -1324,6 +1325,7 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       new_tex->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
 	glClearColor(0, 0, 0, 0);
 	glClear(GL_COLOR_BUFFER_BIT);
 
@@ -1362,15 +1364,16 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 
 static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
                                  const region_t *reg_op, double alpha) {
-	glBlendFunc(GL_ONE, GL_CONSTANT_COLOR);
-	glBlendColor((GLclampf)alpha, (GLclampf)alpha, (GLclampf)alpha, (GLclampf)alpha);
+	// Result color = 0 (GL_ZERO) + alpha (GL_CONSTANT_ALPHA) * original color
+	glBlendFunc(GL_ZERO, GL_CONSTANT_ALPHA);
+	glBlendColor(0, 0, 0, (GLclampf)alpha);
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       img->inner->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, 0, 0, false);
+	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, fbo, 0, false);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDeleteFramebuffers(1, &fbo);

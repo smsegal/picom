@@ -785,9 +785,8 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_win_get_do(window_type, cdbus_reply_enum);
 	cdbus_m_win_get_do(wmwin, cdbus_reply_bool);
 	cdbus_m_win_get_do(leader, cdbus_reply_wid);
-	// focused_real
-	if (!strcmp("focused_real", target)) {
-		cdbus_reply_bool(ps, msg, win_is_focused_real(ps, w));
+	if (!strcmp("focused_raw", target)) {
+		cdbus_reply_bool(ps, msg, win_is_focused_raw(ps, w));
 		return true;
 	}
 	cdbus_m_win_get_do(fade_force, cdbus_reply_enum);
@@ -1040,16 +1039,13 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(use_ewmh_active_win, cdbus_reply_bool);
 	cdbus_m_opts_get_do(detect_transient, cdbus_reply_bool);
 	cdbus_m_opts_get_do(detect_client_leader, cdbus_reply_bool);
+	cdbus_m_opts_get_do(use_damage, cdbus_reply_bool);
 
 #ifdef CONFIG_OPENGL
 	cdbus_m_opts_get_do(glx_no_stencil, cdbus_reply_bool);
 	cdbus_m_opts_get_do(glx_no_rebind_pixmap, cdbus_reply_bool);
-	cdbus_m_opts_get_do(use_damage, cdbus_reply_bool);
 #endif
 
-	cdbus_m_opts_get_stub(track_focus, cdbus_reply_bool, true);
-	cdbus_m_opts_get_do(track_wdata, cdbus_reply_bool);
-	cdbus_m_opts_get_do(track_leader, cdbus_reply_bool);
 #undef cdbus_m_opts_get_do
 #undef cdbus_m_opts_get_stub
 
